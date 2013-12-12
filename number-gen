@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+# vim: fileencoding=utf-8:
+#======================================================================================================================#
+#
+# Copyright © 2013 George A Stamoulis (g.a.stamoulis@gmail.com)
+#
+#======================================================================================================================#
+"""
+A small program for generating number dictionaries.
+
+author  : George Stamoulis
+email   : g.a.stamoulis@gmail.com
+website : http://www.stamoulohta.com
+edited  : 11/12/2013
+"""
+
+import sys, argparse
+
+VER = '1.0.1'
+
+def get_help():
+    """Returns the help messages for all the command line arguments."""
+    pfx_hlp = "The first digits."
+    dgt_hlp = "The number of digits. defaults to 10."
+    bse_hlp = "The base [2, 8, 10, 16]. Defaults to 10."
+    low_hlp = "Lower the letter case. Only applicable for base 16."
+    app_hlp = "Append output to the specified FILE. Overrides the '--output' switch."
+    out_hlp = "Write to the specified FILE. Defaults to stdout."
+    hlp_hlp = "Show this help message and exit."
+    ver_hlp = "Show program's version and exit."
+    return dgt_hlp, pfx_hlp, bse_hlp, low_hlp, app_hlp, out_hlp, hlp_hlp, ver_hlp
+
+def get_parser():
+    """Creates and returns the argument parser and adds the appropriate arguments."""
+    dgt_hlp, pfx_hlp, bse_hlp, low_hlp, app_hlp, out_hlp, hlp_hlp, ver_hlp = get_help()
+    parser = argparse.ArgumentParser(description="Generate number wordlists.", formatter_class=lambda prog: argparse.HelpFormatter(prog,max_help_position=38), add_help=False)
+    parser.add_argument('-d', '--digits', dest='digits', type=int , metavar='#', default=10, help=dgt_hlp)
+    parser.add_argument('-p', '--prefix', dest='prefixes', nargs='+', metavar='#', help=pfx_hlp)
+    parser.add_argument('-b', '--base', dest='base', type=int, metavar='#', choices=[2,8,10,16], default=10, help=bse_hlp)
+    parser.add_argument('-l', '--lower', dest='lower', action='store_true', help=low_hlp)
+    parser.add_argument('-o', '--output' , dest='output' , metavar='F', help=out_hlp)
+    parser.add_argument('-a', '--append' , dest='app' , metavar='F', help=app_hlp, type=argparse.FileType('a'))
+    parser.add_argument('-h', '--help', action='help', help=hlp_hlp)
+    parser.add_argument('--version', action='version', help=ver_hlp, version='%(prog)s '+ VER)
+    return parser
+
+def check_output(args):
+    """Checks if the --append switch was entered and returns the created file descriptor.
+    If --output was given, creates and returns the appropriate file descriptor. else, returns std.out."""
+    if args.app:
+        return args.app
+    else:
+        if args.output:
+            return open(args.output, 'w')
+        else:
+            return sys.stdout
+
+def get_args():
+    """Processes and returns the arguments passed by the command line."""
+    parser = get_parser()
+    args = parser.parse_args()
+    output = check_output(args)
+    if not args.prefixes: args.prefixes = [""]
+    return args.digits, args.prefixes, args.base, args.lower, output
+
+def get_rest(digits, prefix):
+    """Returns the number of digits to be populated."""
+    if prefix:
+        if len(prefix) >= digits:
+            raise ValueError("Length of prefix must be less than total digits. {0} >= {1}".format(len(prefix), digits))
+        else:
+            return digits - len(prefix)
+    else:
+        return digits
+
+def get_base_format(base, lower):
+    """Returns the appropriate format for the number base."""
+    if   base == 2 : return 'b'
+    elif base == 8 : return 'o'
+    elif base == 10: return 'd'
+    elif base == 16: return 'x' if lower else 'X'
+    else: raise ValueError("Unsuported number base ({0:d}).".format(base))
+
+def main():
+    """Main function. Start of the program."""
+    digits, prefixes, base, lower, output = get_args()
+    suffix = "{0:0{1}{2}}\n"
+    bf = get_base_format(base, lower)
+    for prefix in prefixes:
+        rest = None
+        try:
+            rest = get_rest(digits, prefix)
+        except ValueError:
+            print("Length of {0} exceeds total digits. Aborting.".format(prefix))
+            continue
+        if rest:
+            if rest <= 0:
+                print("Digits must be a positive number.")
+                exit(2)
+            word = prefix + suffix
+            for i in range(base ** rest):
+                output.write(word.format(i, rest, bf))
+    output.flush()
+    output.close()
+    exit(0)
+
+#======================================================================================================================#
+
+if __name__ == "__main__" : main()

@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# vim: fileencoding=utf-8:
+#======================================================================================================================#
+#
+# Copyright © 2013 George A Stamoulis (g.a.stamoulis@gmail.com)
+#
+#======================================================================================================================#
+"""
+A small program for changeing the case of greek dictionaries.
+
+author  : George Stamoulis
+email   : g.a.stamoulis@gmail.com
+website : http://www.stamoulohta.com
+edited  : 09/12/2013
+"""
+
+import argparse, chardet, tempfile, subprocess, sys, os
+
+VER = '1.0.1'
+
+# The ¶ key helps with encoding errors.
+cases =[{
+            "Α": "α", "Ά": "ά", "¶": "ά", "Β": "β", "Γ": "γ", "Δ": "δ", "Ε": "ε", "Έ": "έ", "Ζ": "ζ", "Η": "η", "Ή": "ή", "Θ": "θ",
+            "Ι": "ι", "Ί": "ί", "Ϊ": "ϊ", "Κ": "κ", "Λ": "λ", "Μ": "μ", "Ν": "ν", "Ξ": "ξ", "Ο": "ο", "Ό": "ό", "Π": "π",
+            "Ρ": "ρ", "Σ": "σ", "Τ": "τ", "Υ": "υ", "Ύ": "ύ", "Ϋ": "ϋ", "Φ": "φ", "Χ": "χ", "Ψ": "ψ", "Ω": "ω", "Ώ": "ώ"
+        },
+        {
+            "α": "Α", "ά": "Ά", "β": "Β", "γ": "Γ", "δ": "Δ", "ε": "Ε", "έ": "Έ", "ζ": "Ζ", "η": "Η", "ή": "Ή", "θ": "Θ",
+            "ι": "Ι", "ί": "Ί", "ϊ": "Ϊ", "ΐ": "Ϊ", "κ": "Κ", "λ": "Λ", "μ": "Μ", "ν": "Ν", "ξ": "Ξ", "ο": "Ο", "ό": "Ό", "π": "Π",
+            "ρ": "Ρ", "σ": "Σ", "τ": "Τ", "υ": "Υ", "ύ": "Ύ", "ϋ": "Ϋ", "ΰ": "Ϋ", "φ": "Φ", "χ": "Χ", "ψ": "Ψ", "ω": "Ω", "ώ": "Ώ"
+        },
+        {
+            ("α", "ά"): "Α", ("β"): "Β", ("γ"): "Γ", ("δ"): "Δ", ("ε", "έ"): "Ε", ("ζ"): "Ζ", ("η", "ή"): "Η", ("θ"): "Θ",
+            ("ι", "ί", "ϊ", "ΐ"): "Ι", ("κ"): "Κ", ("λ"): "Λ", ("μ"): "Μ", ("ν"): "Ν", ("ξ"): "Ξ", ("ο", "ό"): "Ο", ("π"): "Π",
+            ("ρ"): "Ρ", ("σ"): "Σ", ("τ"): "Τ", ("υ", "ύ", "ϋ", "ΰ"): "Υ", ("φ"): "Φ", ("χ"): "Χ", ("ψ"): "Ψ", ("ω", "ώ"): "Ω"
+        }]
+
+def get_help():
+    """Returns the help messages for all the command line arguments."""
+    wls_hlp = "Wordlist input FILE(s). Defaults to stdin."
+    low_hlp = "For lower case. Default. Overrides the --upper switch."
+    upp_hlp = "For upper case."
+    kac_hlp = "Keeps accents. Only applicable in --upper."
+    dup_hlp = "Try to remove duplicates in the end."
+    app_hlp = "Append output to the specified FILE. Overrides the '--output' switch."
+    out_hlp = "Write to the specified FILE. Defaults to stdout."
+    hlp_hlp = "Show this help message and exit."
+    ver_hlp = "Show program's version and exit."
+    return wls_hlp, low_hlp, upp_hlp, kac_hlp, dup_hlp, app_hlp, out_hlp, hlp_hlp, ver_hlp
+
+def get_parser():
+    """Creates and returns the argument parser and adds the appropriate arguments."""
+    wls_hlp, low_hlp, upp_hlp, kac_hlp, dup_hlp, app_hlp, out_hlp, hlp_hlp, ver_hlp = get_help()
+    parser = argparse.ArgumentParser(description="Change the case of greek wordlists.", formatter_class=argparse.RawTextHelpFormatter, add_help=False)
+    parser.add_argument('wordlist', nargs="*", type=argparse.FileType(mode='rb'), help=wls_hlp, default=[sys.stdin])
+    parser.add_argument('-u', '--upper', dest='upper', action='store_true', help=upp_hlp)
+    parser.add_argument('-l', '--lower', dest='lower', action='store_false', help=low_hlp)
+    parser.add_argument('-k', '--keep-accend', dest='accend', action='store_true', help=kac_hlp)
+    parser.add_argument('-d', '--dedup', dest='dedup', action='store_true', help=dup_hlp)
+    parser.add_argument('-o', '--output' , dest='output' , metavar='F', help=out_hlp)
+    parser.add_argument('-a', '--append' , dest='app' , metavar='F', help=app_hlp, type=argparse.FileType('a'))
+    parser.add_argument('-h', '--help', action='help', help=hlp_hlp)
+    parser.add_argument('--version', action='version', help=ver_hlp, version='%(prog)s '+ VER)
+    return parser
+
+def get_args():
+    """Processes and returns the arguments passed by the command line."""
+    parser = get_parser()
+    args = parser.parse_args()
+    output = check_output(args)
+    upper_case = args.upper & args.lower
+    return args.wordlist, upper_case, args.accend, output, args.dedup
+
+def check_output(args):
+    """Checks if the --append switch was entered and returns the created file descriptor.
+    If --output was given, creates and returns the appropriate file descriptor. else, returns std.out."""
+    if args.app:
+        return args.app
+    else:
+        if args.output:
+            return open(args.output, 'w')
+        else:
+            return sys.stdout
+
+def to_upper(word, accent):
+    """Returns the word to upper case."""
+    upper = ""
+    if accent:
+        for letter in word:
+            upper += letter if letter not in cases[1].keys() else cases[1][letter]
+    else:
+        keys = cases[2].keys()
+        for letter in word:
+            found = False
+            for key in keys:
+                if letter in key:
+                    upper += cases[2][key]
+                    found = True
+            if not found:
+                upper += letter
+    return upper + '\n'
+
+def to_lower(word):
+    """Returns the word to lower case."""
+    lower = ""
+    for letter in word:
+        lower += letter if letter not in cases[0].keys() else cases[0][letter]
+    if letter == 'Σ':
+        lower = lower[:-1] + 'ς'
+    return lower + '\n'
+
+def transcase(word, upper_case, accent):
+    """Changes the case of the word."""
+    return to_upper(word, accent) if upper_case else to_lower(word)
+
+def enc_detect(inpt):
+    """Attempts to detect and return the file encoding."""
+    if inpt == sys.stdin:
+        return None
+    enc = chardet.detect(inpt.read(256))["encoding"]
+    print("detected encoding for {0} is {1}".format(inpt.name, enc))
+    inpt.seek(0)
+    return enc
+
+def transcode(word, encoding):
+    """Decodes the string to unicode."""
+    if(encoding): return word.decode(encoding)
+    else: return word
+
+def failed_dedup(temp, final):
+    """Copyes the temp file to the final one."""
+    print("Deduplicate failed. Please try other tools.")
+    for line in temp:
+        final.write(line)
+    final.flush()
+    final.close()
+
+def deduplicate(temp, final):
+    """Atempts to delete the duplicate entries from the wordlist."""
+    try:
+        if subprocess.check_call(["sort", "-u", temp.name], stdout=final):
+            failed_dedup(temp, final)
+        else:
+            final.flush()
+            final.close()
+    except FileNotFoundError:
+        failed_dedup(temp, final)
+
+def get_output(final, dedup):
+    """Returns a temp file if dedup is True."""
+    return tempfile.NamedTemporaryFile(mode='w+', prefix="drty") if dedup else final
+
+def main():
+    """Main function. Start of the program."""
+    inputs, upper_case, accent, final, dedup = get_args()
+    output = get_output(final, dedup)
+    for wordlist in inputs:
+        encoding = enc_detect(wordlist)
+        for word in wordlist:
+            word = word.strip()
+            if word:
+                uni_word = transcode(word, encoding)
+                output.write(transcase(uni_word, upper_case, accent))
+        wordlist.close()
+    output.flush()
+    if dedup:
+        deduplicate(output, final)
+    output.close()
+
+#======================================================================================================================#
+
+if __name__ == '__main__': main()

@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+# vim: fileencoding=utf-8:
+#======================================================================================================================#
+#
+# Copyright © 2013 George A Stamoulis (g.a.stamoulis@gmail.com)
+#
+#======================================================================================================================#
+"""
+A small program for generating greeklish dictionaries.
+
+author  : George Stamoulis
+email   : g.a.stamoulis@gmail.com
+website : http://www.stamoulohta.com
+edited  : 09/12/2013
+"""
+
+import argparse, chardet, os, sys
+
+VER   = '1.0.1'
+
+chars = {
+        ("α", "Α", "ά", "Ά")                 :  ["a" ,  "A"  ,  "@"  , "4"  , "^"],
+        ("β", "Β")                           :  ["b" ,  "B"  ,  "v"] ,
+        ("γ", "Γ")                           :  ["g" ,  "G"  ,  "y"] ,
+        ("δ", "Δ")                           :  ["d" ,  "D"  ,  "th"],
+        ("ε", "Ε", "έ", "Έ")                 :  ["e" ,  "E"  ,  "3" ,  None , "€"],
+        ("ζ", "Ζ")                           :  ["z" ,  "Z"] ,
+        ("η", "Η", "ή", "Ή")                 :  ["h" ,  "H"  ,  "i"] ,
+        ("θ", "Θ")                           :  ["th",  "TH" ,  "8"] ,
+        ("ι", "Ι", "ί", "Ί", "ϊ", "Ϊ", "ΐ")  :  ["i" ,  "I"  ,  "1"  , "!"] ,
+        ("κ", "Κ")                           :  ["k" ,  "K"  ,  "c"] ,
+        ("λ", "Λ")                           :  ["l" ,  "L"] ,
+        ("μ", "Μ")                           :  ["m" ,  "M"  ,  "u"] ,
+        ("ν", "Ν")                           :  ["n" ,  "N"  ,  "v"] ,
+        ("ξ", "Ξ")                           :  ["ks",  "KS" ,  "3"] ,
+        ("ο", "Ο", "ό", "Ό")                 :  ["o" ,  "O"  ,  "0"] ,
+        ("π", "Π")                           :  ["p" ,  "P"  ,  None , "#"] ,
+        ("ρ", "Ρ")                           :  ["r" ,  "R"  ,  None , "p"] ,
+        ("σ", "Σ", "ς")                      :  ["s" ,  "S"  ,  None , "$"  , "6"],
+        ("τ", "Τ")                           :  ["t" ,  "T"] ,
+        ("υ", "Υ", "ύ", "Ύ", "ϋ" "Ϋ", "ΰ")   :  ["y" ,  "Y"  ,  "u"  , "i"] ,
+        ("φ", "Φ")                           :  ["f" ,  "F"  ,  "ph"],
+        ("χ", "Χ")                           :  ["x" ,  "X"  ,  "h"  , "ch"],
+        ("ψ", "Ψ")                           :  ["ps",  "PS"],
+        ("ω", "Ω", "ώ", "Ώ")                 :  ["w" ,  "W"  ,  "o"]
+        }
+
+def get_index_key():
+    """Dynamicaly creates the indexes key for the help message. Changes made to the
+    indexes length, should be automatically reflected here as well."""
+    index_key = []
+    for i in range(1,32):
+        line = " {0:2} "
+        indexes = get_indexes(i)
+        for v in range(len(indexes)):
+            if v == 0:
+                line += "="
+            else:
+                line += "&"
+            line += " [{0}] ".format(str(indexes[-1-v]+1))
+        index_key.append(line.format(i))
+    return index_key
+
+def draw_table(indx):
+    """Appends the character table to the help message."""
+    hlp = ""
+    plchldr = "-"
+    char_keys = sorted(chars, key=chars.get)
+    header = "==[KEY]=|=[1]=|=[2]=|=[3]=|=[4]=|=[5]=="
+    frmt   = "|   {key}   |  {0:2} |  {1:2} |  {2:2} |  {3:2} |  {4:2} |"
+    footer = "======================================="
+    if indx == 2:
+        hlp += header
+    elif indx == 27:
+        hlp += footer
+    else:
+        v = [plchldr] * 5
+        vals = chars[char_keys[indx - 4]]
+        for i in range(5):
+            try:
+                v[i] = vals[i] if vals[i] is not None else plchldr
+            except IndexError:
+                pass
+        hlp += frmt.format(v[0], v[1], v[2], v[3], v[4], key = char_keys[indx - 3][1])
+    return hlp
+
+def get_ind_hlp():
+    """Dynamically creates and returns the '--indexes' help message. This is so if changes are made in the chars characters,
+    the will be reflected in the help message."""
+    hlp = "Translate using the selected indexes.\nIf the index for a character is empty, the previous will be used.\nDefaults to 1.\n\n"
+    indx_key = get_index_key()
+    frmt_ik = "{0:30}"
+    indx = 0
+    for idxk in indx_key:
+        hlp += frmt_ik.format(idxk)
+        if indx >= 2 and indx <= 27:
+            hlp += draw_table(indx)
+        hlp +="\n"
+        indx += 1
+    hlp += "\n"
+    return hlp
+
+def get_help():
+    """Returns the help messages for all the command line arguments."""
+    com_hlp  = "Make all possible combinations between indexes. Creates much larger files!"
+    app_hlp  = "Append output to the specified FILE. Overrides the '--output' switch."
+    out_hlp  = "Write to the specified FILE. Defaults to stdout."
+    wls_hlp = "Wordlist input FILE(s). Defaults to stdin."
+    hlp_hlp = "Show this help message and exit."
+    ver_hlp = "Show program's version and exit."
+    ind_hlp  = get_ind_hlp()
+    return com_hlp, ind_hlp, app_hlp, out_hlp, wls_hlp, hlp_hlp, ver_hlp
+
+def get_parser():
+    """Creates and returns the argument parser and adds the appropriate arguments."""
+    com_hlp, ind_hlp, app_hlp, out_hlp, wls_hlp, hlp_hlp, ver_hlp = get_help()
+    parser = argparse.ArgumentParser(description="Generate greeklish wordlists.", formatter_class=argparse.RawTextHelpFormatter, add_help=False)
+    parser.add_argument('wordlist', nargs="*", type=argparse.FileType(mode='rb'), help=wls_hlp, default=[sys.stdin])
+    parser.add_argument('-i', '--ind', dest='indexes', metavar='N' , nargs='?', help=ind_hlp, type=int, choices=range(1,32), default=1)
+    parser.add_argument('-c', '--combine', dest='comb'   , action='store_true', help=com_hlp)
+    parser.add_argument('-o', '--output' , dest='output' , metavar='F', help=out_hlp)
+    parser.add_argument('-a', '--append' , dest='app' , metavar='F', help=app_hlp, type=argparse.FileType('a'))
+    parser.add_argument('-h', '--help', action='help', help=hlp_hlp)
+    parser.add_argument('--version', action='version', help=ver_hlp, version='%(prog)s '+ VER)
+    return parser
+
+def get_args():
+    """Processes and returns the arguments passed by the command line."""
+    parser = get_parser()
+    args = parser.parse_args()
+    output = check_output(args)
+    return args.wordlist, output, args.comb, args.indexes
+
+def check_output(args):
+    """Checks if the --append switch was entered and returns the created file descriptor.
+    If --output was given, creates and returns the appropriate file descriptor. else, returns std.out."""
+    if args.app:
+        return args.app
+    else:
+        if args.output:
+            return open(args.output, 'w')
+        else:
+            return sys.stdout
+
+def enc_detect(inpt):
+    """Attempts to detect and return the file encoding."""
+    if inpt == sys.stdin:
+        return None
+    enc = chardet.detect(inpt.read(256))["encoding"]
+    print("detected encoding for {0} is {1}".format(inpt.name, enc))
+    inpt.seek(0)
+    return enc
+
+def transcode(word, encoding):
+    """Decodes the string to unicode."""
+    if(encoding): return word.decode(encoding)
+    else: return word
+
+def get_indexes(tiers):
+    """Returns the selected indexes for the character translation."""
+    indexes = []
+    mask = 0b1
+    for i in range(5):
+        if tiers & mask:
+            indexes.append(i)
+        mask = mask << 1
+    return indexes
+
+def find_char(vals, indexes, i):
+    """Returns the character at the given index. If the index is empty,
+    returns the previous one from the selected indexes. if those are empty
+    too, returns the previous from the total indexes."""
+    char = None
+    mod_a = mod_b = 0
+    while char == None:
+        try:
+            char = vals[indexes[i - mod_a] - mod_b]
+            mod_a +=1
+        except IndexError:
+            mod_a = 0
+            mod_b += 1
+    return char
+
+def combine(results, key, indexes):
+    """Creates and returns all possible combinations from results and indexes"""
+    combinations = []
+    for i in range(len(indexes)):
+        char = find_char(chars[key], indexes, i)
+        for wrd in results:
+            combinations.append(wrd + char)
+    return combinations
+
+def append_letter(results, key, indexes):
+    """Appends the indexed letter to every word in results."""
+    for i in range(len(indexes)):
+        res_i = i
+        char = find_char(chars[key], indexes, i)
+        results[res_i] += char
+    return results
+
+def uniquify(res):
+    """Removes duplicates and empty lines."""
+    seen = set()
+    seen_add = seen.add
+    return [ x for x in res if x and x not in seen and not seen_add(x) ]
+
+def translate(word, comb, tiers):
+    """Translates each word letter to the corresponding index and
+    either combines or appends it to the resulting words."""
+    indexes = get_indexes(tiers)
+    results = ([""] * len(indexes)) if not comb else [""]
+    for letter in word:
+        for key in chars.keys():
+            if letter in key:
+                if comb:
+                    results = combine(results, key, indexes)
+                else:
+                    results = append_letter(results, key, indexes)
+    return uniquify(results)
+
+def main():
+    """Main function. Start of the program."""
+    inpts, outpt, comb, tiers = get_args()
+    for inpt in inpts:
+        enc = enc_detect(inpt)
+        for word in inpt:
+            uni_word = transcode(word, enc)
+            res = translate(uni_word, comb, tiers)
+            for wrd in res:
+                outpt.write(wrd + "\n")
+        inpt.close()
+    outpt.flush()
+    outpt.close()
+
+#======================================================================================================================#
+
+if __name__ == "__main__" : main()
